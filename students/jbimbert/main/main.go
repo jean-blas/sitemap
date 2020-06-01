@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	uurl "net/url"
 	"os"
 	"sort"
 	"strings"
@@ -26,6 +27,7 @@ var (
 	schemes  = [...]string{"https://", "http://"}
 	mLinks   = make(map[string]Link, 0)
 	maxDepth = -1
+	rootURL  = ""
 )
 
 // Check if the provided string s begins with one of the defined schemes
@@ -39,8 +41,8 @@ func hasScheme(s, withOption string) bool {
 }
 
 // Load the page corresponding to the given URL as []byte
-func loadPage(url string) ([]byte, error) {
-	resp, err := http.Get(url)
+func loadPage(u string) ([]byte, error) {
+	resp, err := http.Get(u)
 	if err != nil {
 		return nil, err
 	}
@@ -95,9 +97,9 @@ func purgeTwins(links []Link) []Link {
 	return uniqLinks
 }
 
-// Parse the page at url, extracting the links with same domain, normalized and unique
-func parsePage(url, domain string) ([]Link, error) {
-	body, err := loadPage(url)
+// Parse the page at Url "u", extracting the links with same domain, normalized and unique
+func parsePage(u, domain string) ([]Link, error) {
+	body, err := loadPage(u)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +119,7 @@ func parsePage(url, domain string) ([]Link, error) {
 	// Normalize all links (/blabla => http://domain/blabla)
 	normalizedLinks := mapLinks(filteredLinks, func(l Link) Link {
 		if string(l.Href[0]) == "/" {
-			return Link{Href: schemes[0] + domain + l.Href, Text: l.Text}
+			return Link{Href: rootURL + l.Href, Text: l.Text}
 		}
 		return l
 	})
@@ -127,7 +129,7 @@ func parsePage(url, domain string) ([]Link, error) {
 	return uniqLinks, nil
 }
 
-// Recursive : check if each link page is already parsed, else parse it and add the url to the global map
+// Recursive : check if each link page is already parsed, else parse it and add the URL to the global map
 func findAll(links []Link, domain string, depth int) error {
 	for _, link := range links {
 		if _, found := mLinks[link.Href]; found {
@@ -192,24 +194,35 @@ func writeBuf() {
 	w.Flush()
 }
 
+func extractDomain(url string) (string, error) {
+	u, err := uurl.Parse(url)
+	if err != nil {
+		return "", err
+	}
+	h := strings.Split(u.Hostname(), ".")
+	domain := h[len(h)-2] + "." + h[len(h)-1]
+	return domain, nil
+}
+
 func main() {
-	domain := flag.String("domain", "www.calhoun.io", "domain to parse")
+	url := flag.String("domain", "https://www.calhoun.io", "domain to parse")
 	outfile := flag.String("outfile", "", "XML output file (if empty, output is written to stdout)")
 	depth := flag.Int("depth", -1, "max depth number of links to follow from root page")
 	flag.Parse()
 
+	domain, err := extractDomain(*url)
+	if err != nil {
+		panic(err)
+	}
+	rootURL = *url
+
 	maxDepth = *depth
 
-	fulldomain := *domain
-	if !hasScheme(*domain, "") {
-		fulldomain = schemes[0] + *domain
-	}
-
 	// The first link to enter the process
-	links := []Link{{Href: fulldomain, Text: "Root link"}}
+	links := []Link{{Href: *url, Text: "Root link"}}
 
 	// find all links
-	err := findAll(links, *domain, 0)
+	err = findAll(links, domain, 0)
 	if err != nil {
 		panic(err)
 	}
