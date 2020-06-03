@@ -204,6 +204,15 @@ func extractDomain(url string) (string, error) {
 	return domain, nil
 }
 
+// Deduce the root URL of the target page from the request URL
+func findRootUrl(url string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	return resp.Request.URL.String(), nil
+}
+
 func main() {
 	url := flag.String("domain", "https://www.calhoun.io", "domain to parse")
 	outfile := flag.String("outfile", "", "XML output file (if empty, output is written to stdout)")
@@ -214,7 +223,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	rootURL = *url
+
+	rootURL, err = findRootUrl(*url)
+	if err != nil {
+		panic(err)
+	}
 
 	maxDepth = *depth
 
